@@ -98,7 +98,10 @@ int _dump() {
 inline void adjustPLLMultiplier() {
   
   const u32 defaultNum = (u32)(((float)(DEFAULT_FREQUENCY * PLL_DEN)) / ((float)(PLL_BASE_FREQ * PLL_RATIO)));
-  hw(0xbc1000fc) = (PLL_MUL_MSB << 16) | (defaultNum << 8) | PLL_DEN;
+  hw(0xbc1000fc) = (hw(0xbc1000fc) & 0xffff0000) | (defaultNum << 8) | PLL_DEN;
+  sync();
+  
+  hw(0xbc1000fc) = (PLL_MUL_MSB << 16) | (hw(0xbc1000fc) & 0xffff);
   settle();
 }
 
