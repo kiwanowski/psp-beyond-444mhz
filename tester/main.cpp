@@ -7,6 +7,7 @@
 #include <pspgu.h>
 #include "kcall.h"
 #include "main.h"
+#include <math.h>
 
 #define u32 unsigned int
 
@@ -25,7 +26,7 @@ PSP_MAIN_THREAD_ATTR(PSP_THREAD_ATTR_VFPU | PSP_THREAD_ATTR_USER);
 #define PLL_DEN                           20 /*17*/ /*18*/ 
 #define PLL_MUL_MSB                       0x0124
 #define PLL_BASE_FREQ                     37
-#define PLL_RATIO_INDEX                   5
+#define PLL_RATIO_INDEX                   0x05
 #define PLL_RATIO                         1.0f
 //#define PLL_CUSTOM_FLAG                 27
 #define DEFAULT_FREQUENCY                 333
@@ -186,6 +187,19 @@ void adjustInitialFrequencies() {
   sceKernelResumeDispatchThread(state);
 }
 
+inline int isFrequencyNearInteger(const float num) {
+  
+  const float tolerance = 0.00001f;
+  const float baseFreq = (float)PLL_BASE_FREQ;
+  const float den = (float)PLL_DEN;
+  const float freq = baseFreq * (num / den) * PLL_RATIO;
+  
+  if (freq - roundf(freq) > tolerance) {
+    return 1;
+  }
+  return 0;
+}
+
 int _setOverclock() {
   
   sceKernelDelayThread(3000000);
@@ -213,10 +227,13 @@ int _setOverclock() {
     const u32 num = (u32)(((float)(theoreticalFreq * PLL_DEN)) / ((float)(PLL_BASE_FREQ * PLL_RATIO)));
     
     updatePLLControl();
-        
+    
     //const u32 msb = PLL_MUL_MSB | (1 << (PLL_CUSTOM_FLAG - 16));
     while (_num <= num) {
-      updatePLLMultiplier(_num, PLL_MUL_MSB);
+      
+      if (isFrequencyNearInteger(_num)) {
+        updatePLLMultiplier(_num, PLL_MUL_MSB);
+      }
       _num++;
     }
     settle();
@@ -228,11 +245,12 @@ int _setOverclock() {
     sceKernelResumeDispatchThread(state);
 
     scePowerTick(PSP_POWER_TICK_ALL);
-    sceKernelDelayThread(9000000);
-    writeFrequency(currFreq);
-    sceKernelDelayThread(2000000);
+    sceKernelDelayThread(3500000);
+    writeFrequency(currFreq); // with a marging (-step)
+    sceKernelDelayThread(1000000);
     currFreq = defaultFreq;
   }
+  
   return 0;
 }
 
@@ -268,7 +286,10 @@ void _cancelOverclock() {
     updatePLLControl();
 
     while (_num >= num) {
-      updatePLLMultiplier(_num, PLL_MUL_MSB);
+      
+      if (isFrequencyNearInteger(_num)) {
+        updatePLLMultiplier(_num, PLL_MUL_MSB);
+      }
       _num--;
     }
     settle();
@@ -315,7 +336,7 @@ void guInit() {
   sceGuDepthBuffer((void*)DEPTH_BUF, BUF_WIDTH);
   sceGuDisable(GU_DEPTH_TEST);
   sceGuEnable(GU_SCISSOR_TEST);
-  sceGuScissor(0, 64, 480, 272 - 128);
+  sceGuScissor(0, 68, 480, 272 - 136);
   sceGuClearColor(0xff100808);
   sceGuDisplay(GU_TRUE);
   sceGuFinish();
@@ -407,7 +428,7 @@ int main() {
     pspDebugScreenSetOffset(offset);
     
     pspDebugScreenSetXY(40, 0);
-    pspDebugScreenPrintf("Overclock Stress Tester v2.5");
+    pspDebugScreenPrintf("Overclock Stress Tester v2.6");
     
     pspDebugScreenSetXY(0, 0);
     pspDebugScreenPrintf(" FPS: %llu               \n", fps);
@@ -417,6 +438,10 @@ int main() {
     pspDebugScreenPrintf(" Ctrl: 0x%08x            \n", ctrl);
     pspDebugScreenPrintf(" Mult: 0x%08x            \n", mult);
 
+    if (currFreq >= (THEORETICAL_FREQUENCY - OVERCLOCK_FREQUENCY_STEP)) {
+      pspDebugScreenPrintf(" Max frequency reached!");
+    }
+  
     {
       Vertex* const vertices = (Vertex*)sceGuGetMemory(sizeof(Vertex) * 2);
       move += dir;
